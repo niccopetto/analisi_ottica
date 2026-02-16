@@ -169,16 +169,16 @@ def main():
     print("Starting Optical Analysis...")
     
     # 1. Preprocessing
-    if not os.path.exists(InputDIR):
-        print(f"Directory {InputDIR} not found. Opening folder selection dialog...")
-        root = tk.Tk()
-        root.withdraw()
-        InputDIR = filedialog.askdirectory(title="Select Input Directory")
-        root.destroy()
-        
-        if not InputDIR:
-            print("No directory selected. Exiting.")
-            return 
+    # Force folder selection "a priori"
+    print("Opening folder selection dialog...")
+    root = tk.Tk()
+    root.withdraw() # Hide the main window
+    InputDIR = filedialog.askdirectory(title="Select Input Directory")
+    root.destroy()
+    
+    if not InputDIR:
+        print("No directory selected. Exiting.")
+        return 
     
     # Call preprocess (User Interaction required for ROI)
     inputImages, d, ordine_calcolato, res_px, res_py = preprocess(InputDIR, pixelsizex, pixelsizey)
