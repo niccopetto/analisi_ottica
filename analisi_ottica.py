@@ -173,6 +173,7 @@ def main():
     print("Opening folder selection dialog...")
     root = tk.Tk()
     root.withdraw() # Hide the main window
+    root.attributes('-topmost', True) # Force window to be on top
     InputDIR = filedialog.askdirectory(title="Select Input Directory")
     root.destroy()
     
