@@ -1,0 +1,52 @@
+============================================================
+  RIFERIMENTI: LIMITI DELL'ALGORITMO GERCHBERG-SAXTON
+  E PHASE RETRIEVAL MULTI-PIANO
+============================================================
+
+1. ARTICOLO ORIGINALE GS
+   Gerchberg, R. W. & Saxton, W. O. (1972)
+   "A practical algorithm for the determination of phase
+    from image and diffraction plane pictures"
+   Optik, 35, 237-246.
+   DOI: N/A (pre-DOI era)
+
+2. REVIEW CLASSICA (CONFRONTO ALGORITMI)
+   Fienup, J. R. (1982)
+   "Phase retrieval algorithms: a comparison"
+   Applied Optics, 21(15), 2758-2769.
+   DOI: 10.1364/AO.21.002758
+
+3. PHASE RETRIEVAL MULTI-PIANO DA DEFOCUS
+   Allen, L. J. & Oxley, M. P. (2001)
+   "Phase retrieval from series of images obtained
+    by defocus variation"
+   Optics Communications, 199, 65-75.
+   DOI: 10.1016/S0030-4018(01)01556-5
+
+4. OTTIMIZZAZIONE NON-LINEARE PER PUPIL FUNCTION
+   Brady, G. R. & Fienup, J. R. (2006)
+   "Nonlinear optimization algorithm for retrieving
+    the full complex pupil function"
+   Optics Express, 14(2), 474-486.
+   DOI: 10.1364/OPEX.14.000474
+
+============================================================
+  NOTE PER IL TUO SETUP
+============================================================
+
+- Il GS richiede "diversita' di fase" tra i piani:
+  le immagini devono essere sufficientemente diverse.
+
+- La diversita' e' governata dal numero di Fresnel:
+  N_F = a^2 / (lambda * z)
+  dove a = dimensione fascio, z = distanza tra piani.
+
+- Se N_F >> 1 (piani troppo vicini), le immagini
+  sono quasi identiche e il GS non ha informazione
+  sufficiente per ricostruire la fase.
+
+- Per una ricostruzione affidabile, la scansione
+  dovrebbe coprire una frazione significativa
+  del Rayleigh range: z_R = pi * w^2 / lambda.
+
+============================================================

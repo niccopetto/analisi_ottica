@@ -3,6 +3,68 @@ import numpy as np
 import cv2
 from scipy import ndimage
 from pathlib import Path
+import sys
+import os
+import subprocess
+import tempfile
+
+def _try_load_onedrive_image(filepath):
+    """
+    Fallback loader for OneDrive cloud-only files.
+    Uses Windows 'copy' command (which triggers OneDrive hydration)
+    to copy the file to a temp location, then reads it with cv2.imread.
+    If OneDrive is not running, attempts to start it.
+    """
+    if sys.platform != 'win32':
+        return None
+    
+    try:
+        ext = os.path.splitext(filepath)[1]
+        fd, tmp_path = tempfile.mkstemp(suffix=ext)
+        os.close(fd)
+        
+        # Try copy via Windows shell
+        result = subprocess.run(
+            f'copy /Y "{filepath}" "{tmp_path}"',
+            shell=True, capture_output=True, text=True, timeout=60
+        )
+        
+        # If cloud provider is not running, try to start OneDrive and retry
+        if result.returncode != 0 and "cloud" in result.stdout.lower():
+            print(">>\tOneDrive not running. Starting OneDrive...")
+            # Try common OneDrive paths
+            onedrive_paths = [
+                os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\OneDrive\OneDrive.exe"),
+                os.path.expandvars(r"%ProgramFiles%\Microsoft OneDrive\OneDrive.exe"),
+                os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft OneDrive\OneDrive.exe"),
+            ]
+            for odpath in onedrive_paths:
+                if os.path.exists(odpath):
+                    subprocess.Popen([odpath], creationflags=0x00000008)  # DETACHED_PROCESS
+                    print(f">>\tOneDrive started. Waiting for sync to initialize...")
+                    import time
+                    time.sleep(10)
+                    # Retry copy
+                    result = subprocess.run(
+                        f'copy /Y "{filepath}" "{tmp_path}"',
+                        shell=True, capture_output=True, text=True, timeout=120
+                    )
+                    break
+        
+        if result.returncode == 0:
+            img = cv2.imread(tmp_path)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            if img is not None:
+                print(f">>\tImage loaded via OneDrive fallback.")
+                return img
+        
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+    except Exception as e:
+        print(f">>\tOneDrive fallback failed: {e}")
+    
+    return None
 
 ## Definition of AuxiliaryClass
 class AuxiliaryClass():
@@ -57,8 +119,11 @@ class ImageClass():
         self.centeredROI = None
         print(">>\tImageClass successfully created")
 
-    def loadImage(self, path,calibration:dict):
+    def loadImage(self, path, calibration:dict):
         self.imageOriginalData = cv2.imread(str(path))
+        if self.imageOriginalData is None:
+            # Fallback: try loading via OneDrive hydration (Windows copy to temp)
+            self.imageOriginalData = _try_load_onedrive_image(str(path))
         if self.imageOriginalData is None:
             print(f">>\tERROR! Could not load image from {path}. Check file format or path.")
             return
@@ -81,8 +146,11 @@ class ImageClass():
 
     def showOriginal(self, gamma=1):
         WinName = f"Original image: {self.imageName}"
-        cv2.namedWindow(WinName, cv2.WINDOW_NORMAL  )
-        cv2.imshow(WinName, self.imageData)
+        cv2.namedWindow(WinName, cv2.WINDOW_NORMAL)
+        display_img = self.rescale2minmax(self.imageData.astype(np.float64), 0.0, 1.0)
+        if gamma != 1:
+            display_img = np.power(display_img, 1.0/gamma)
+        cv2.imshow(WinName, display_img)
         cv2.waitKey(0)
         cv2.destroyWindow(WinName)
 
@@ -104,7 +172,9 @@ class ImageClass():
     def selectROI(self):
         WinName = f"Select ROI: {self.imageName}"
         cv2.namedWindow(WinName, cv2.WINDOW_NORMAL)
-        self.edgesROI = cv2.selectROI(WinName, self.imageData, True, False)
+        # Rescale for display so image is visible during selection
+        display_img = self.rescale2minmax(self.imageData.astype(np.float64), 0.0, 255.0).astype(np.uint8)
+        self.edgesROI = cv2.selectROI(WinName, display_img, True, False)
         #print(self.edges)
         self.ROI = self.imageData[self.edgesROI[1]:self.edgesROI[1]+self.edgesROI[3], 
                                   self.edgesROI[0]:self.edgesROI[0]+self.edgesROI[2]]
@@ -116,16 +186,19 @@ class ImageClass():
     def showROI(self, gamma=1):
         WinName = f"ROI: {self.imageName}"
         cv2.namedWindow(WinName, cv2.WINDOW_NORMAL)
-        cv2.imshow(WinName, self.ROI)
+        display_img = self.rescale2minmax(self.ROI.astype(np.float64), 0.0, 1.0)
+        if gamma != 1:
+            display_img = np.power(display_img, 1.0/gamma)
+        cv2.imshow(WinName, display_img)
         cv2.waitKey(0)
         cv2.destroyWindow(WinName)
 
     def selectBG(self):
         WinName = f"Select BG: {self.imageName}"
         cv2.namedWindow(WinName, cv2.WINDOW_NORMAL)
-        WinName = f"Select BG: {self.imageName}"
-        cv2.namedWindow(WinName, cv2.WINDOW_NORMAL)
-        self.edgesBG = cv2.selectROI(WinName, self.imageData, True, False)
+        # Rescale for display so image is visible during selection
+        display_img = self.rescale2minmax(self.imageData.astype(np.float64), 0.0, 255.0).astype(np.uint8)
+        self.edgesBG = cv2.selectROI(WinName, display_img, True, False)
         cv2.waitKey(0)
         cv2.destroyWindow(WinName)
         self.BG = self.imageData[self.edgesBG[1]:self.edgesBG[1]+self.edgesBG[3],
@@ -167,10 +240,13 @@ class ImageClass():
         self.centeredROI = np.roll(self.centeredROI, 
                                    (self.ysize//2 - self.cmy, self.xsize//2 - self.cmx), axis=(0,1))
 
-    def showCenteredROI(self):
+    def showCenteredROI(self, gamma=1):
         WinName = f"Centered ROI: {self.imageName}"
         cv2.namedWindow(WinName, cv2.WINDOW_NORMAL)
-        cv2.imshow(WinName, self.centeredROI)
+        display_img = self.rescale2minmax(self.centeredROI.astype(np.float64), 0.0, 1.0)
+        if gamma != 1:
+            display_img = np.power(display_img, 1.0/gamma)
+        cv2.imshow(WinName, display_img)
         cv2.waitKey(0)
         cv2.destroyWindow(WinName)
     
