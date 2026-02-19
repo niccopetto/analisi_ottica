@@ -22,7 +22,7 @@ if ENABLE_ERROR_ANALYSIS:
         HAS_ERROR_ANALYSIS = True
     except ImportError:
         HAS_ERROR_ANALYSIS = False
-        print("[INFO] error_analysis.py non trovato, error budget disabilitato.")
+        print("[INFO] error_analysis.py not found, error budget disabled.")
 else:
     HAS_ERROR_ANALYSIS = False
 import tkinter as tk
@@ -59,10 +59,10 @@ def super_gaussian_curve(coords, A, x0, y0, wx, wy, theta, P, offset):
 
 def noll_to_nm(j):
     """
-    Converte l'indice sequenziale di Noll (j) nella coppia (n, m).
-    Supporta fino ai primi 15 termini (o più se espandi la logica).
+    Converts the Noll sequential index (j) into the (n, m) pair.
+    Supports up to the first 15 terms (or more if logic is expanded).
     """
-    # Indice Noll: (n, m)
+    # Noll Index: (n, m)
     mapping = {
         1: (0, 0),   # Piston
         2: (1, 1),   # Tilt X
@@ -86,12 +86,12 @@ def noll_to_nm(j):
     else:
         # Fallback for higher orders if needed, or raise error
         # Simple analytic approximation or expanded map required for j > 15
-        raise ValueError(f"Indice j={j} non mappato (estendi il dizionario o usa algoritmo completo)")
+        raise ValueError(f"Index j={j} not mapped (extend the dictionary or use full algorithm)")
 
 def get_circular_roi(image, cx, cy, radius):
     """
-    1. Ritaglia un quadrato attorno al centro (Crop).
-    2. Applica una maschera circolare (NaN fuori dal raggio).
+    1. Crops a square around the center.
+    2. Applies a circular mask (NaN outside the radius).
     Returns: (cropped_masked_image, peak_to_valley, local_cx, local_cy)
     """
     h, w = image.shape
@@ -123,7 +123,7 @@ def get_circular_roi(image, cx, cy, radius):
 
     return cropped_square, ptv, local_cx, local_cy
 
-def preprocess(input_dir=".", pixelsizex=0.0056*mm, pixelsizey=0.0056*mm):
+def preprocess(input_dir=".", pixelsizex=0.0084*mm, pixelsizey=0.0084*mm):
     """
     Performs image preprocessing: loading, interactive selection, resampling, ROI/BG subtraction.
     """
@@ -190,7 +190,7 @@ def preprocess(input_dir=".", pixelsizex=0.0056*mm, pixelsizey=0.0056*mm):
             img.showROI()
             img.selectBG()
             img.retrieveAverageBG()
-            redo = input(f"Vuoi rifare la selezione ROI per {img.imageName}? (y/n, default n): ")
+            redo = input(f"Do you want to redo the ROI selection for {img.imageName}? (y/n, default n): ")
             if redo.strip().lower() != 'y':
                 break
         img.subtractBGfromROI()
@@ -242,12 +242,21 @@ def preprocess(input_dir=".", pixelsizex=0.0056*mm, pixelsizey=0.0056*mm):
     # Ordering and Distance Calculation
     print("\n--- Calculating Distances ---")
     valori_grezzi = np.array([estrai_distanza_da_obj(img) for img in inputImages])
-    ordine_calcolato = np.argsort(valori_grezzi)[::-1]
+    ordine_calcolato = np.argsort(valori_grezzi)
     valori_ordinati = valori_grezzi[ordine_calcolato]
     
     delta_raw = np.abs(np.diff(valori_ordinati))
-    dist_scale=0.1
+    
+    # Magnification Factor for Z axis 
+    # (Standard: 1.0. If lens system is used, Z_eff = Z_raw * M_longitudinal)
+    msg = "Enter Z-axis Magnification Factor (default 1.0): "
+    z_mag_input = input(msg)
+    z_mag = float(z_mag_input) if z_mag_input.strip() else 1.0
+    
+    dist_scale = 0.1 * z_mag # 0.1 mm step * Magnification
     d = (delta_raw * dist_scale) * mm 
+    
+    print(f"\n--- Magnification applied: {z_mag} ---\n") 
     
 
     # Cleaning
@@ -316,42 +325,42 @@ def main():
     plt.show()
 
     # --- Propagation Report ---
-    print("\n--- REPORT SEQUENZA ---")
+    print("\n--- SEQUENCE REPORT ---")
     for i, idx in enumerate(ordine_calcolato):
         nome_f = os.path.basename(inputImages[idx].imageName)
         if i < len(d):
             step_m = d[i]
-            print(f"[{i+1}] {nome_f} \n    |  ↓  Propagazione: {step_m*1000:.1f} mm ({step_m:.4f} m)")
+            print(f"[{i+1}] {nome_f} \n    |  ↓  Propagation: {step_m*1000:.1f} mm ({step_m:.4f} m)")
         else:
-            print(f"[{i+1}] {nome_f} (Piano Finale / Far Field)")
+            print(f"[{i+1}] {nome_f} (Final Plane / Far Field)")
     
     # --- Image sanitization ---
-    print("\n--- PULIZIA IMMAGINI ---")
+    print("\n--- IMAGE CLEANING ---")
     for i, img in enumerate(inputImages):
         min_val = np.min(img.centeredROI)
-        print(f"Img {i}: Minimo originale = {min_val:.4f}")
+        print(f"Img {i}: Original minimum = {min_val:.4f}")
         img.centeredROI = np.maximum(img.centeredROI, 0)
-        print(f"Img {i}: Minimo post-pulizia = {np.min(img.centeredROI):.4f}")
-    print("\nImmagini sanitizzate. Ora i NaN dovrebbero sparire.")
+        print(f"Img {i}: Post-cleaning minimum = {np.min(img.centeredROI):.4f}")
+    print("\nImages sanitized. NaNs should be gone now.")
 
     # 2. GS Algorithm
-    print("\nAvvio algoritmo GS...")
+    print("\nStarting GS algorithm...")
     GS = GerSaxPhaseRetriever(*inputImages,
                               distances=d,
                               wavelength=wavelength, 
                               ordering=ordine_calcolato)
     
-    GS.GS_algorithm(Niterations=500)
+    GS.GS_algorithm(Niterations=200)
     
     # --- GS Diagnostics ---
     campo = GS.FarField.field
     ci_sono_nan = np.isnan(campo).any()
     ci_sono_inf = np.isinf(campo).any()
     max_val = np.max(np.abs(campo))
-    print(f"--- DIAGNOSTICA ---")
-    print(f"Ci sono NaN? {ci_sono_nan}")
-    print(f"Ci sono Inf? {ci_sono_inf}")
-    print(f"Intensità Max: {max_val:.4e}")
+    print(f"--- DIAGNOSTICS ---")
+    print(f"Are there NaNs? {ci_sono_nan}")
+    print(f"Are there Infs? {ci_sono_inf}")
+    print(f"Max Intensity: {max_val:.4e}")
     print(f"-------------------")
     
     # --- Plot Retrieved Phases + Intensities (Mosaic) ---
@@ -384,19 +393,26 @@ def main():
     # =====================================================================
     print("\n--- SUPER-GAUSSIAN FIT ---")
     
-    # Data prep: Normalize and create grids
+    # Data prep: Normalize RAW images and create grids
     normalized_input_intensity = []
+    gs_retrieved_intensity = []
     Y = []
     X = []
     for i, name in enumerate(GS.imagesNames):
-        I_data = GS.RetrieveIntensity(name)
-        I_data = I_data / np.max(I_data)
-        normalized_input_intensity.append(I_data)
-        h_i, w_i = I_data.shape
+        # Raw camera data (for fitting)
+        idx = ordine_calcolato[i]
+        I_raw = inputImages[idx].centeredROI.astype(float)
+        I_raw = I_raw / np.max(I_raw)
+        normalized_input_intensity.append(I_raw)
+        # GS Retrieved (for visual comparison only)
+        I_gs = GS.RetrieveIntensity(name)
+        I_gs = I_gs / np.max(I_gs)
+        gs_retrieved_intensity.append(I_gs)
+        h_i, w_i = I_raw.shape
         temp_y, temp_x = np.mgrid[0:h_i, 0:w_i]
         Y.append(temp_y)
         X.append(temp_x)
-    print(f"Dati pronti. Caricate {len(normalized_input_intensity)} matrici")
+    print(f"Data ready. Loaded {len(normalized_input_intensity)} matrices (raw camera)")
 
     # Intensity fitting
     fit_intensity = []
@@ -446,7 +462,7 @@ def main():
                 'Offset': offset
             })
         except RuntimeError:
-            print(f"{name:<20} | FIT FALLITO")
+            print(f"{name:<20} | FIT FAILED")
     print("-" * 70)
 
     # --- Intensity Fit Mosaic (Raw / GS Retrieved / Fit / Residuals) ---
@@ -457,20 +473,20 @@ def main():
     row_res  = [f"res_{i}"  for i in range(n_fit)]
     layout = [row_raw, row_meas, row_fit, row_res]
     fig_fit, axd = plt.subplot_mosaic(layout, figsize=(20, 13), constrained_layout=True)
-    print("Generazione plot con Mosaic...")
+    print("Generating plot with Mosaic...")
 
-    # Get raw input images (ordered as GS ordering)
-    raw_images_ordered = [inputImages[idx].centeredROI for idx in ordine_calcolato]
-
-    for i, (I_measured, params, gy, gx) in enumerate(zip(normalized_input_intensity, fit_intensity, Y, X)):
+    for i, (I_raw_norm, params, gy, gx) in enumerate(zip(normalized_input_intensity, fit_intensity, Y, X)):
         # Model reconstruction
         args = (params['Amplitude'], params['Center_X'], params['Center_Y'], 
                 params['Waist_X'], params['Waist_Y'], params['Theta'],
                 params['P'], params['Offset'])
         I_model = super_gaussian_curve((gy, gx), *args).reshape(gy.shape)
         
-        # Residual
-        residuals = I_measured - I_model
+        # Get GS retrieved image for comparison
+        I_gs = gs_retrieved_intensity[i]
+        
+        # Residual (Fit vs Raw)
+        residuals = I_raw_norm - I_model
         limit = np.max(np.abs(residuals))
         
         # Pixel error
@@ -479,14 +495,12 @@ def main():
 
         # Row 0: Raw Input (camera data)
         key_raw = f"raw_{i}"
-        I_raw = raw_images_ordered[i]
-        I_raw_norm = I_raw / np.max(I_raw) if np.max(I_raw) > 0 else I_raw
         axd[key_raw].imshow(I_raw_norm, cmap='inferno', vmin=0, vmax=1)
         axd[key_raw].set_title(f"Raw: {params['Name']}", fontsize=10, color='green')
 
         # Row 1: GS Retrieved (what algorithm predicts)
         key_m = f"meas_{i}"
-        im_m = axd[key_m].imshow(I_measured, cmap='inferno', vmin=0, vmax=1)
+        im_m = axd[key_m].imshow(I_gs, cmap='inferno', vmin=0, vmax=1)
         axd[key_m].set_title(f"GS Retrieved: {params['Name']}", fontsize=10)
         
         # Row 2: Elliptical Fit
@@ -506,20 +520,20 @@ def main():
 
     axd["raw_0"].set_ylabel("Raw Input", fontsize=14, fontweight='bold')
     axd["meas_0"].set_ylabel("GS Retrieved", fontsize=14, fontweight='bold')
-    axd["fit_0"].set_ylabel("Modello Fit", fontsize=14, fontweight='bold')
-    axd["res_0"].set_ylabel("Residui", fontsize=14, fontweight='bold')
+    axd["fit_0"].set_ylabel("Fit Model", fontsize=14, fontweight='bold')
+    axd["res_0"].set_ylabel("Residuals", fontsize=14, fontweight='bold')
     cbar_ax1 = fig_fit.add_axes([1.01, 0.4, 0.015, 0.5])
-    fig_fit.colorbar(im_m, cax=cbar_ax1, label='Intensità Norm.')
+    fig_fit.colorbar(im_m, cax=cbar_ax1, label='Norm. Intensity')
     cbar_ax2 = fig_fit.add_axes([1.01, 0.05, 0.015, 0.25])
-    fig_fit.colorbar(im_r, cax=cbar_ax2, label='Residui')
-    plt.suptitle("Confronto: Misura vs Super-Gaussiana", fontsize=16)
+    fig_fit.colorbar(im_r, cax=cbar_ax2, label='Residuals')
+    plt.suptitle("Comparison: Measurement vs Super-Gaussian", fontsize=16)
     plt.show()
 
     # =====================================================================
     # 4. CROP AND PHASE MASKING
     # =====================================================================
     print("\n--- CROP AND PHASE MASKING ---")
-    print("Avvio estrazione ROI sulla Fase...")
+    print("Starting ROI extraction on Phase...")
     
     phases_for_zernike = []
     
@@ -564,9 +578,9 @@ def main():
         axd_roi[f"crop_{i}"].set_title(f"ROI (2w)\nPtV: {ptv_value:.2f} rad", fontsize=10, fontweight='bold')
         axd_roi[f"crop_{i}"].axis('off')
 
-    axd_roi["raw_0"].set_ylabel("Fase Totale", fontsize=14, fontweight='bold')
+    axd_roi["raw_0"].set_ylabel("Total Phase", fontsize=14, fontweight='bold')
     axd_roi["crop_0"].set_ylabel("Crop & Mask", fontsize=14, fontweight='bold')
-    plt.suptitle("Estrazione ROI per Analisi Zernike (Raggio = 2 * Waist)", fontsize=16)
+    plt.suptitle("ROI Extraction for Zernike Analysis (Radius = 2 * Waist)", fontsize=16)
     plt.show()
 
     # =====================================================================
@@ -587,7 +601,7 @@ def main():
     matrix_Z_list = []   # saved for error analysis
     phi_vec_list = []    # saved for error analysis
     
-    print(f"Avvio decomposizione Zernike su {len(phases_for_zernike)} piani...")
+    print(f"Starting Zernike decomposition on {len(phases_for_zernike)} planes...")
     
     for item in phases_for_zernike:
         name = item['Name']
@@ -611,7 +625,7 @@ def main():
         theta_vec = theta[valid_mask]
         
         if len(phi_vec) == 0:
-            print(f"Attenzione: Nessun pixel valido per {name}")
+            print(f"Warning: No valid pixels for {name}")
             continue
 
         # Build the Zernike design matrix: each column is one Zernike polynomial
@@ -641,7 +655,7 @@ def main():
         astigmatism_waves = np.sqrt(coeffs[4]**2 + coeffs[5]**2) / (2 * pi)
         print(f"{name:<20} | Defocus (Z4): {defocus_waves:.4f} λ | Astig (Z5+Z6): {astigmatism_waves:.4f} λ")
     
-    print("Calcolo completato.")
+    print("Calculation complete.")
 
     # =====================================================================
     # 6. ZERNIKE RECONSTRUCTION
@@ -655,7 +669,7 @@ def main():
     layout_recon = [row_orig, row_recon, row_diff]
     fig_recon, axd_recon = plt.subplot_mosaic(layout_recon, figsize=(20, 12), constrained_layout=True)
     
-    print("Inizio ricostruzione della fase dai coefficienti...")
+    print("Starting phase reconstruction from coefficients...")
     
     for i, (res, item) in enumerate(zip(zernike_results, phases_for_zernike)):
         name = res['Name']
@@ -690,26 +704,26 @@ def main():
         
         # Plot: Original
         im0 = axd_recon[f"orig_{i}"].imshow(phase_orig, cmap='jet')
-        axd_recon[f"orig_{i}"].set_title(f"Originale: {name}", fontsize=10)
+        axd_recon[f"orig_{i}"].set_title(f"Original: {name}", fontsize=10)
         
         # Plot: Reconstructed
         im1 = axd_recon[f"recon_{i}"].imshow(phase_recon, cmap='jet')
-        axd_recon[f"recon_{i}"].set_title(f"Ricostruita ({len(coeffs)} term.)", fontsize=10)
+        axd_recon[f"recon_{i}"].set_title(f"Reconstructed ({len(coeffs)} terms)", fontsize=10)
         
         # Plot: Residuals
         limit_r = np.nanmax(np.abs(diff)) if not np.all(np.isnan(diff)) else 1
         im2 = axd_recon[f"diff_{i}"].imshow(diff, cmap='bwr', vmin=-limit_r, vmax=limit_r)
-        axd_recon[f"diff_{i}"].set_title(f"Residui (RMS: {rms_error:.3f})", fontsize=9)
+        axd_recon[f"diff_{i}"].set_title(f"Residuals (RMS: {rms_error:.3f})", fontsize=9)
         
         for row in [f"orig_{i}", f"recon_{i}", f"diff_{i}"]:
             axd_recon[row].set_xticks([])
             axd_recon[row].set_yticks([])
 
     if n_zr > 0:
-        axd_recon["orig_0"].set_ylabel("Fase Originale", fontsize=12, fontweight='bold')
-        axd_recon["recon_0"].set_ylabel("Fase Ricostruita", fontsize=12, fontweight='bold')
-        axd_recon["diff_0"].set_ylabel("Differenza", fontsize=12, fontweight='bold')
-    plt.suptitle("Confronto Fase: Originale vs Ricostruzione da Polinomi di Zernike", fontsize=16)
+        axd_recon["orig_0"].set_ylabel("Original Phase", fontsize=12, fontweight='bold')
+        axd_recon["recon_0"].set_ylabel("Reconstructed Phase", fontsize=12, fontweight='bold')
+        axd_recon["diff_0"].set_ylabel("Difference", fontsize=12, fontweight='bold')
+    plt.suptitle("Phase Comparison: Original vs Zernike Polynomial Reconstruction", fontsize=16)
     plt.show()
 
     # =====================================================================
@@ -727,18 +741,18 @@ def main():
         # Expected waist at focus vs fit waist
         w_exp = error_budget['expected_waist']
         dw_exp = error_budget['delta_waist']
-        print(f"Waist atteso al fuoco OAP: {w_exp*1e6:.1f} ± {dw_exp*1e6:.1f} µm")
+        print(f"Expected waist at OAP focus: {w_exp*1e6:.1f} ± {dw_exp*1e6:.1f} µm")
         if fit_intensity:
             w_fit_px = np.mean([p['Waist'] for p in fit_intensity])
             w_fit_m = w_fit_px * pixelsizex
-            print(f"Waist dal fit (media):     {w_fit_m*1e6:.1f} µm")
+            print(f"Waist from fit (mean):     {w_fit_m*1e6:.1f} µm")
     else:
-        print("\n[SKIP] Error budget non disponibile.")
+        print("\n[SKIP] Error budget not available.")
 
     # =====================================================================
     # 8. OPTICAL REPORT
     # =====================================================================
-    print("\n--- REPORT OTTICO ---")
+    print("\n--- OPTICAL REPORT ---")
     
     names = [res['Name'] for res in zernike_results]
     indices = np.arange(len(names))
@@ -750,12 +764,12 @@ def main():
     rms_residua = []     # in waves
     strehl_ratio = []
     
-    print("Avvio calcolo metriche (unità: waves λ)...")
+    print("Starting metrics calculation (units: waves λ)...")
     
     for res, item in zip(zernike_results, phases_for_zernike):
         orig = item.get('Phase_Crop', item.get('Phase_Data'))
         if orig is None:
-            print(f"Errore: Dati fase non trovati per {res['Name']}")
+            print(f"Error: Phase data not found for {res['Name']}")
             continue
         coeffs_w = res['Coeffs'] / (2 * pi)  # rad → waves
         
@@ -801,10 +815,10 @@ def main():
                                  fmt='o--', color=col, label=lab, capsize=3)
             else:
                 ax2_evo.plot(indices, all_coeffs[:, j], 'o--', color=col, label=lab)
-    ax2_evo.set_ylabel("Aberrazioni di Forma [waves λ]", color='blue')
+    ax2_evo.set_ylabel("Shape Aberrations [waves λ]", color='blue')
     ax2_evo.tick_params(axis='y', labelcolor='blue')
     
-    plt.title("Evoluzione delle Aberrazioni: Struttura vs Propagazione")
+    plt.title("Aberration Evolution: Structure vs Propagation")
     ax1_evo.set_xticks(indices)
     ax1_evo.set_xticklabels(names, rotation=45, ha='right')
     ax1_evo.legend(loc="upper left")
@@ -818,13 +832,13 @@ def main():
     if has_errbars:
         ax_rms.errorbar(indices, rms_originale,
                         yerr=error_budget['delta_rms'],
-                        fmt='s-', color='firebrick', label='RMS Totale', capsize=4)
+                        fmt='s-', color='firebrick', label='Total RMS', capsize=4)
         ax_rms.errorbar(indices, rms_residua,
                         yerr=error_budget['delta_rms'] * 0.5,
-                        fmt='o--', color='forestgreen', label='RMS Residua (Stimata)', capsize=4)
+                        fmt='o--', color='forestgreen', label='Residual RMS (Estimated)', capsize=4)
     else:
-        ax_rms.plot(indices, rms_originale, 's-', color='firebrick', label='RMS Totale')
-        ax_rms.plot(indices, rms_residua, 'o--', color='forestgreen', label='RMS Residua (Stimata)')
+        ax_rms.plot(indices, rms_originale, 's-', color='firebrick', label='Total RMS')
+        ax_rms.plot(indices, rms_residua, 'o--', color='forestgreen', label='Residual RMS (Estimated)')
     ax_rms.set_ylabel("RMS [waves λ]")
     ax_rms.grid(True, alpha=0.3)
     
@@ -835,9 +849,9 @@ def main():
     else:
         ax_s.bar(indices, strehl_ratio, alpha=0.3, color='gold', label='Strehl Ratio')
     ax_s.set_ylim(0, 1.1)
-    ax_s.set_ylabel("Strehl Ratio (1.0 = Ideale)", color='goldenrod')
+    ax_s.set_ylabel("Strehl Ratio (1.0 = Ideal)", color='goldenrod')
     
-    plt.title("Analisi della Qualità e Fedeltà del Fronte d'Onda")
+    plt.title("Wavefront Quality and Fidelity Analysis")
     ax_rms.set_xticks(indices)
     ax_rms.set_xticklabels(names, rotation=45, ha='right')
     lines_q, labels_q = ax_rms.get_legend_handles_labels()
